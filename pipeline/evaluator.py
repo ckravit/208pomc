@@ -204,14 +204,14 @@ def evaluate_by_sex(y_true, y_prob, sex_vector, threshold=0.5):
 def evaluate_model(predictions, y_true_splits, sex_splits, threshold=0.5):
     """
     predictions must contain:
-        - pred_test (probabilities)
-        - pred_test_bin (hard predictions)
+        - y_pred_test (probabilities)
+        - y_pred_test_bin (hard predictions)
     """
     y_test = y_true_splits["test"]
     sex_test = sex_splits["test"]
 
-    prob_test = predictions["pred_test"]
-    pred_test = predictions["pred_test_bin"]
+    prob_test = predictions["y_pred_test"]
+    pred_test = predictions["y_pred_test_bin"]
 
     return {
         "brier": compute_brier_score(y_test, prob_test),
@@ -260,8 +260,8 @@ def run_evaluation(dataset_name, run_cfg, model_results, logger):
     sex_splits = {"test": model_results["sex_test"]}
 
     predictions = {
-        "pred_test": model_results["pred_test"],
-        "pred_test_bin": model_results["pred_test_bin"],
+        "y_pred_test": model_results["y_pred_test"],
+        "y_pred_test_bin": model_results["y_pred_test_bin"],
     }
 
     eval_dict = evaluate_model(predictions, y_true_splits, sex_splits)

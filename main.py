@@ -5,19 +5,19 @@ import os
 import sys
 from datetime import datetime
 
-from loader import (
+from pipeline.loader import (
     load_yaml_config,
     discover_latest_run,
     load_model_artifacts
 )
-from preprocess import (
+from pipeline.preprocess import (
     preprocess_dataset,
     load_existing_preprocess
 )
-from training import train_model
-from evaluator import run_evaluation
-from reporting import generate_report
-from compare import run_comparison
+from pipeline.training import train_model
+from pipeline.evaluator import run_evaluation
+from pipeline.reporting import generate_report
+from pipeline.compare import run_comparison
 
 
 # ============================================================

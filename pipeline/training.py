@@ -266,10 +266,10 @@ def train_model(dataset_name, run_cfg, model_cfg, preprocess_pkg, logger):
         "cv_results": cv_df,
         "best_params": best_params,
 
-        "pred_train": pred_train,
-        "pred_val": pred_val,
-        "pred_test": pred_test,
-        "pred_test_bin": pred_test_bin,
+        "y_pred_train": pred_train,
+        "y_pred_val": pred_val,
+        "y_pred_test": pred_test,
+        "y_pred_test_bin": pred_test_bin,
 
         "y_train": y_train,
         "y_val": y_val,

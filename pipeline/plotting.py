@@ -5,6 +5,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
 from sklearn.calibration import calibration_curve
+from pipeline.loader import (
+    load_feature_names,
+    load_preprocess_metadata,
+    load_array,
+)
 
 # SHAP imports are optional
 try:
@@ -397,14 +402,41 @@ def plot_compare_metrics_table(compare_metrics, output_path):
 def generate_plots(dataset_name, run_cfg, eval_results, training_metadata, logger):
     """
     Creates all standard plots for one dataset/run.
+
+    training_metadata provides:
+        - output_dir (for saving)
+        - y_test_path
+        - predictions_path   (test-set prob predictions)
+
+    Feature names & SHAP sample data are loaded from the preprocess folder.
     """
     logger.info(f"Generating plots for dataset: {dataset_name}")
 
-    out_root = training_metadata["output_dir"]
-    plot_dir = os.path.join(out_root, "plots")
+    # -------------------------------------------------------
+    # Paths
+    # -------------------------------------------------------
+    output_root = training_metadata["output_dir"]
+    plot_dir = os.path.join(output_root, "plots")
     os.makedirs(plot_dir, exist_ok=True)
 
-    # ---- Basic ROC / PR ----
+    # Load true labels and predicted probs
+    y_test = load_array(training_metadata["y_test_path"])
+    y_test_prob = load_array(training_metadata["predictions_path"])
+
+    # Load preprocess information
+    preprocess_root = run_cfg["paths"]["output_root"]
+    preprocess_folder = training_metadata["preprocess_folder"]
+    preprocess_dir = os.path.join(preprocess_root, dataset_name, preprocess_folder)
+
+    feature_names = load_feature_names(preprocess_dir)
+
+    # Optionally load sample X for SHAP
+    X_train_sample_path = os.path.join(preprocess_dir, "X_train_sample.npy")
+    X_train_sample = load_array(X_train_sample_path) if os.path.exists(X_train_sample_path) else None
+
+    # -------------------------------------------------------
+    # 1. Basic ROC + PR
+    # -------------------------------------------------------
     plot_roc_curve(
         eval_results["roc_curve"]["fpr"],
         eval_results["roc_curve"]["tpr"],
@@ -421,33 +453,39 @@ def generate_plots(dataset_name, run_cfg, eval_results, training_metadata, logge
         output_path=os.path.join(plot_dir, "test_pr.png"),
     )
 
-    # ---- Calibration ----
+    # -------------------------------------------------------
+    # 2. Calibration curve
+    # -------------------------------------------------------
     plot_calibration_curve(
-        training_metadata["y_test"],
-        training_metadata["y_test_prob"],
+        y_test,
+        y_test_prob,
         title=f"{dataset_name.upper()} Calibration Curve",
         output_path=os.path.join(plot_dir, "calibration.png"),
     )
 
-    # ---- Probability Histogram ----
+    # -------------------------------------------------------
+    # 3. Probability histogram
+    # -------------------------------------------------------
     plot_probability_histogram(
-        training_metadata["y_test"],
-        training_metadata["y_test_prob"],
+        y_test,
+        y_test_prob,
         title=f"{dataset_name.upper()} Probability Histogram",
         output_path=os.path.join(plot_dir, "prob_hist.png"),
     )
 
-    # ---- Sex-stratified ----
+    # -------------------------------------------------------
+    # 4. Sex-stratified curves
+    # -------------------------------------------------------
     sex_roc_dict = {}
     sex_pr_dict = {}
 
-    for sex, vals in eval_results["sex_stratified"].items():
-        sex_roc_dict[sex] = {
+    for sex_label, vals in eval_results["sex_stratified"].items():
+        sex_roc_dict[sex_label] = {
             "fpr": vals["roc_curve"]["fpr"],
             "tpr": vals["roc_curve"]["tpr"],
             "auc": vals["roc_auc"],
         }
-        sex_pr_dict[sex] = {
+        sex_pr_dict[sex_label] = {
             "precision": vals["pr_curve"]["precision"],
             "recall": vals["pr_curve"]["recall"],
             "ap": vals["average_precision"],
@@ -455,5 +493,33 @@ def generate_plots(dataset_name, run_cfg, eval_results, training_metadata, logge
 
     plot_sex_stratified_roc(sex_roc_dict, os.path.join(plot_dir, "sex_roc.png"))
     plot_sex_stratified_pr(sex_pr_dict, os.path.join(plot_dir, "sex_pr.png"))
+
+    # -------------------------------------------------------
+    # 5. Feature importance
+    # -------------------------------------------------------
+    model = training_metadata["model"]
+    plot_feature_importance(
+        model=model,
+        feature_names=feature_names,
+        top_n=20,
+        output_path=os.path.join(plot_dir, "feature_importance.png"),
+    )
+
+    # -------------------------------------------------------
+    # 6. SHAP plots (optional)
+    # -------------------------------------------------------
+    if HAS_SHAP and X_train_sample is not None:
+        plot_shap_summary(
+            model,
+            X_train_sample,
+            feature_names,
+            output_path=os.path.join(plot_dir, "shap_summary.png"),
+        )
+        plot_shap_bar(
+            model,
+            X_train_sample,
+            feature_names,
+            output_path=os.path.join(plot_dir, "shap_bar.png"),
+        )
 
     logger.info("Plot generation complete.")
