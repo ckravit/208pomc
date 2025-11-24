@@ -1,0 +1,82 @@
+# ============================
+# GLOBAL PIPELINE CONFIGURATION
+# ============================
+
+# Datasets allowed (dataset-first design)
+datasets:
+  - abp
+  - ppg
+
+# ----------------------------------------
+# INPUT/OUTPUT ROOT FOLDERS
+# ----------------------------------------
+paths:
+  input_root: "inputs/"
+  output_root: "outputs/"
+  log_root: "logs/"
+
+# ----------------------------------------
+# DATASET-SPECIFIC INPUT FILES
+# ----------------------------------------
+input_files:
+  abp:
+    features: "ABP_FEATURE_LIBRARY_MLORD_DATASET.csv"
+    outcomes: "Feature_ABP_Outcomes.csv"
+  ppg:
+    features: "PPG_FEATURE_LIBRARY_MLORD_DATASET.csv"
+    outcomes: "Feature_PPG_Outcomes.csv"
+
+# Timestamp format for run folders
+timestamp_format: "%Y%m%d_%H%M%S"
+
+# Model folder naming under each dataset
+folder_naming:
+  model_folder: "gbc"
+
+# ----------------------------------------
+# GLOBAL SEED HANDLING
+# ----------------------------------------
+seed: 42
+
+# ----------------------------------------
+# SPLIT CONFIGURATION (70/10/20)
+# ----------------------------------------
+splits:
+  train_size: 0.70
+  val_size:   0.10
+  test_size:  0.20
+
+  # fields used to build stratification labels
+  stratify_on:
+    - POMC
+    - sex
+
+# ----------------------------------------
+# IMPUTATION SETTINGS
+# ----------------------------------------
+imputer:
+  enabled: true
+  strategy: "mean"
+  save_imputer: true
+  load_imputer_if_available: true
+
+# ----------------------------------------
+# LOGGING CONFIGURATION
+# ----------------------------------------
+logging:
+  level: "INFO"
+  include_console: true
+  redirect_print_to_log: true
+
+# ----------------------------------------
+# EVALUATION REPORTING
+# ----------------------------------------
+report_format: "markdown"   # options: markdown, text
+
+# ----------------------------------------
+# COMPARISON MODE SETTINGS
+# ----------------------------------------
+comparison:
+  autodetect_latest: true      # If user doesn't specify runs
+  output_grouping: "dataset"   # compare/<dataset>/
+
