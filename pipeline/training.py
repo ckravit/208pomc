@@ -3,6 +3,7 @@
 import os
 import json
 import joblib
+from datetime import datetime
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import StratifiedKFold, GridSearchCV
@@ -154,6 +155,15 @@ def train_model(dataset_name, run_cfg, model_cfg, preprocess_pkg, logger):
 
     logger.info(f"\n========== TRAINING: {dataset_name.upper()} ==========")
 
+    # Build new run directory path
+    run_timestamp = datetime.now().strftime(run_cfg["timestamp_format"])
+    output_dir = os.path.join(run_cfg["paths"]["output_root"],
+                            dataset_name,
+                            run_cfg["folder_naming"]["model_folder"],
+                            f"run_{run_timestamp}")
+    os.makedirs(output_dir, exist_ok=True)
+    logger.info(f"[TRAIN] Saving outputs to: {output_dir}")
+    
     # -----------------------------------------------------------
     # Extract split data from preprocess_pkg
     # -----------------------------------------------------------
@@ -225,7 +235,6 @@ def train_model(dataset_name, run_cfg, model_cfg, preprocess_pkg, logger):
     # -----------------------------------------------------------
     # Save model, predictions, metadata
     # -----------------------------------------------------------
-    output_dir = preprocess_pkg["output_dir"]
 
     # Save model
     model_path = save_trained_model(final_model, output_dir)
@@ -248,8 +257,8 @@ def train_model(dataset_name, run_cfg, model_cfg, preprocess_pkg, logger):
 
         # ---- NEW: reference so compare.py can load y_test ----
         "y_test_path": y_test_path,
-        "preprocess_folder": f'preprocess_{preprocess_pkg["metadata"]["preprocess_timestamp"]}',
-
+        # "preprocess_folder": f'preprocess_{preprocess_pkg["metadata"]["preprocess_timestamp"]}',
+        "preprocess_folder": preprocess_pkg["output_dir"]
     }
 
     metadata_path = save_training_metadata(metadata, output_dir)
