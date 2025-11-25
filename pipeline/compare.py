@@ -67,7 +67,7 @@ def load_run_artifacts(dataset_name, run_folder, output_root):
     Loads:
         - evaluation.json
         - training_metadata.json
-        - preds_test.npy
+        - y_preds_test.npy
         - model.joblib (optional for compare)
     """
     run_dir = os.path.join(output_root, dataset_name, run_folder)
@@ -75,7 +75,7 @@ def load_run_artifacts(dataset_name, run_folder, output_root):
     paths = {
         "evaluation": os.path.join(run_dir, "evaluation.json"),
         "metadata": os.path.join(run_dir, "training_metadata.json"),
-        "preds": os.path.join(run_dir, "preds_test.npy"),
+        "preds": os.path.join(run_dir, "y_preds_test.npy"),
         "model": os.path.join(run_dir, "model.joblib"),
     }
 
@@ -85,7 +85,7 @@ def load_run_artifacts(dataset_name, run_folder, output_root):
 
     # Preds (for McNemar)
     import numpy as np
-    preds_test = np.load(paths["preds"])
+    y_preds_test = np.load(paths["preds"])
 
     # ---- NEW: load y_test so DeLong / McNemar can work ----
     y_test_path = metadata.get("y_test_path")
@@ -98,7 +98,7 @@ def load_run_artifacts(dataset_name, run_folder, output_root):
         "run_folder": run_folder,
         "eval": eval_dict,
         "metadata": metadata,
-        "preds_test": preds_test,
+        "y_preds_test": y_preds_test,
         "y_test": y_test,
         "paths": paths,
     }
@@ -152,15 +152,15 @@ def compare_runs(run_artifacts):
                     try:
                         p_delong = delong_test(
                             y_true,
-                            r1["preds_test"],   # NOT ROC-AUC; these are probabilities
-                            r2["preds_test"]
+                            r1["y_preds_test"],   # NOT ROC-AUC; these are probabilities
+                            r2["y_preds_test"]
                         )
                     except Exception:
                         p_delong = "Error"
 
                     # --- McNemar test (hard predictions required) ---
-                    pred_a = (r1["preds_test"] >= 0.5).astype(int)
-                    pred_b = (r2["preds_test"] >= 0.5).astype(int)
+                    pred_a = (r1["y_preds_test"] >= 0.5).astype(int)
+                    pred_b = (r2["y_preds_test"] >= 0.5).astype(int)
 
                     try:
                         p_mcnemar = mcnemar_test(y_true, pred_a, pred_b)

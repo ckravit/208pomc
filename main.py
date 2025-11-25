@@ -186,13 +186,13 @@ def main():
 
                 # Build model_results for evaluator
                 y_test = artifacts.get("y_test")
-                pred_test = artifacts.get("preds_test")
+                y_pred_test = artifacts.get("y_preds_test")
                 sex_test = artifacts["training_results"].get("sex_test") if "training_results" in artifacts else None
 
                 model_results = {
                     "y_test": y_test,
-                    "y_pred_test": pred_test,
-                    "y_pred_test_bin": (pred_test >= 0.5).astype(int),
+                    "y_pred_test": y_pred_test,
+                    "y_pred_test_bin": (y_pred_test >= 0.5).astype(int),
                     "sex_test": sex_test,
                 }
 
