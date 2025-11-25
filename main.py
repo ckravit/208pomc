@@ -186,7 +186,7 @@ def main():
 
                 # Build model_results for evaluator
                 y_test = artifacts.get("y_test")
-                y_pred_test = artifacts.get("y_preds_test")
+                y_pred_test = artifacts.get("y_pred_test")
                 sex_test = artifacts["training_results"].get("sex_test") if "training_results" in artifacts else None
 
                 model_results = {

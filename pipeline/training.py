@@ -119,7 +119,7 @@ def save_trained_model(model, output_dir):
 
 
 def save_predictions(predictions, output_dir):
-    path = os.path.join(output_dir, "y_preds_test.npy")
+    path = os.path.join(output_dir, "y_pred_test.npy")
     np.save(path, predictions)
     return path
 
