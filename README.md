@@ -294,6 +294,7 @@ Defines global pipeline settings, including:
 - timestamp format
 - preprocessing options (e.g., seed, imputer strategy)
 - dataset-specific file names
+
 This file governs how data flows through the pipeline and how output folders are created.
 
 ```model_config.yaml```
@@ -301,4 +302,5 @@ Defines model-specific settings, including:
 - which model(s) are available
 - hyperparameter grids used during training
 - any model-level default parameters
+
 This file allows you to adjust or add models without touching the training code.
