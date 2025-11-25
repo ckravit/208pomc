@@ -159,7 +159,7 @@ def main():
                 train_model(
                     dataset_name=ds,
                     run_cfg=run_cfg,
-                    model_cfg=model_cfg["gbc"],   # only gbc
+                    model_cfg=model_cfg["models"]["gbc"],   # only gbc
                     preprocess_pkg=preprocess_pkg,
                     logger=logger
                 )

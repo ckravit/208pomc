@@ -8,7 +8,7 @@ models:
   # GRADIENT BOOSTING CLASSIFIER
   # ===========================
   gbc:
-
+    model_name: "gbc"
     # ----------------------------------------
     # PARAMETER GRIDS (separate for each dataset)
     # ----------------------------------------

@@ -194,46 +194,46 @@ def _apply_imputer(imputer, X_np, logger):
 # Internal: saving + loading artifacts
 # ============================================================
 
-def _save_splits(train_idx, val_idx, test_idx, outdir):
+def _save_splits(train_idx, val_idx, test_idx, output_dir):
     data = {
         "train_idx": train_idx.tolist(),
         "val_idx": val_idx.tolist(),
         "test_idx": test_idx.tolist(),
     }
-    with open(os.path.join(outdir, "splits.json"), "w") as f:
+    with open(os.path.join(output_dir, "splits.json"), "w") as f:
         json.dump(data, f, indent=2)
 
 
-def _save_feature_names(feature_names, outdir):
-    with open(os.path.join(outdir, "feature_names.json"), "w") as f:
+def _save_feature_names(feature_names, output_dir):
+    with open(os.path.join(output_dir, "feature_names.json"), "w") as f:
         json.dump(feature_names, f, indent=2)
 
 
-def _save_imputer(imputer, outdir):
-    joblib.dump(imputer, os.path.join(outdir, "imputer.joblib"))
+def _save_imputer(imputer, output_dir):
+    joblib.dump(imputer, os.path.join(output_dir, "imputer.joblib"))
 
 
-def _save_preprocess_metadata(metadata: dict, outdir):
-    with open(os.path.join(outdir, "metadata.yaml"), "w") as f:
+def _save_preprocess_metadata(metadata: dict, output_dir):
+    with open(os.path.join(output_dir, "metadata.yaml"), "w") as f:
         yaml.safe_dump(metadata, f)
 
 
-def _load_splits(outdir):
-    with open(os.path.join(outdir, "splits.json"), "r") as f:
+def _load_splits(output_dir):
+    with open(os.path.join(output_dir, "splits.json"), "r") as f:
         return json.load(f)
 
 
-def _load_feature_names(outdir):
-    with open(os.path.join(outdir, "feature_names.json"), "r") as f:
+def _load_feature_names(output_dir):
+    with open(os.path.join(output_dir, "feature_names.json"), "r") as f:
         return json.load(f)
 
 
-def _load_imputer(outdir):
-    return joblib.load(os.path.join(outdir, "imputer.joblib"))
+def _load_imputer(output_dir):
+    return joblib.load(os.path.join(output_dir, "imputer.joblib"))
 
 
-def _load_preprocess_metadata(outdir):
-    with open(os.path.join(outdir, "metadata.yaml"), "r") as f:
+def _load_preprocess_metadata(output_dir):
+    with open(os.path.join(output_dir, "metadata.yaml"), "r") as f:
         return yaml.safe_load(f)
 
 
@@ -243,17 +243,27 @@ def _load_preprocess_metadata(outdir):
 
 def load_existing_preprocess(dataset_name, run_cfg, logger):
     """
-    Load splits, feature names, imputer, metadata from last preprocess_<timestamp> folder.
+    Load splits, feature names, imputer, metadata from the latest preprocess_<timestamp> folder.
+    Also reconstruct X_train, y_train, etc. for use in training.
+
+    Returns:
+        Dictionary containing:
+            X_train, y_train, sex_train, strat_train
+            X_val,   y_val,   sex_val,   strat_val
+            X_test,  y_test,  sex_test,  strat_test
+            feature_names, imputer, output_dir, metadata
     """
+    import polars as pl
+    import numpy as np
+    import os
+
+    # --- Paths ---
     out_root = run_cfg["paths"]["output_root"]
     model_folder = run_cfg["folder_naming"]["model_folder"]
     dataset_dir = os.path.join(out_root, dataset_name, model_folder)
 
-    # pick most recent preprocess_* folder
-    subdirs = [
-        d for d in os.listdir(dataset_dir)
-        if d.startswith("preprocess_")
-    ]
+    # Find latest preprocess
+    subdirs = [d for d in os.listdir(dataset_dir) if d.startswith("preprocess_")]
     if not subdirs:
         raise FileNotFoundError("No preprocess_* directory found.")
 
@@ -267,13 +277,84 @@ def load_existing_preprocess(dataset_name, run_cfg, logger):
     imputer = _load_imputer(preprocess_dir)
     metadata = _load_preprocess_metadata(preprocess_dir)
 
+    # --- Load raw CSVs using info from metadata ---
+    in_root = run_cfg["paths"]["input_root"]
+    feature_file = metadata["feature_file"]
+    outcome_file = metadata["outcome_file"]
+
+    feature_path = os.path.join(in_root, feature_file)
+    outcome_path = os.path.join(in_root, outcome_file)
+
+    X = pl.read_csv(feature_path)
+    Y = pl.read_csv(outcome_path).rename({"StudyID": "Study_ID"})
+
+    # Align Study_ID types
+    X = X.with_columns(pl.col("Study_ID").cast(pl.Int64))
+    Y = Y.with_columns(pl.col("Study_ID").cast(pl.Int64))
+
+    # Join outcomes
+    X = X.join(Y.select(["Study_ID", "POMC"]), on="Study_ID", how="left")
+
+    # Clean/encode sex as before
+    X = _clean_sex_column(X, logger)
+    majority = metadata.get("majority_sex", _compute_sex_majority(X, logger))
+    X = _encode_sex_binary(X, majority, logger)
+
+    # Create numpy arrays
+    y_np = X["POMC"].to_numpy()
+    sex_np = X["sex_binary"].to_numpy()
+
+    drop_cols = ["Study_ID", "POMC", "sex", "sex_binary"]
+    X_np = X.select([c for c in feature_names]).to_numpy()  # Use loaded feature_names
+
+    # Generate strat labels (same logic as during preprocess)
+    strat_labels = _make_strat_labels(sex_np, y_np, logger)
+
+    # --- Use saved indices for splits ---
+    train_idx = np.array(splits["train_idx"])
+    val_idx = np.array(splits["val_idx"])
+    test_idx = np.array(splits["test_idx"])
+
+    # --- Impute features on split sets ---
+    X_train = _apply_imputer(imputer, X_np[train_idx], logger)
+    X_val   = _apply_imputer(imputer, X_np[val_idx], logger)
+    X_test  = _apply_imputer(imputer, X_np[test_idx], logger)
+
+    y_train = y_np[train_idx]
+    y_val   = y_np[val_idx]
+    y_test  = y_np[test_idx]
+
+    sex_train = sex_np[train_idx]
+    sex_val   = sex_np[val_idx]
+    sex_test  = sex_np[test_idx]
+
+    strat_train = strat_labels[train_idx]
+    strat_val   = strat_labels[val_idx]
+    strat_test  = strat_labels[test_idx]
+
+    # Package with the same structure as preprocess_dataset
     return {
-        "splits": splits,
+        "X_train": X_train,
+        "y_train": y_train,
+        "sex_train": sex_train,
+        "strat_train": strat_train,
+
+        "X_val": X_val,
+        "y_val": y_val,
+        "sex_val": sex_val,
+        "strat_val": strat_val,
+
+        "X_test": X_test,
+        "y_test": y_test,
+        "sex_test": sex_test,
+        "strat_test": strat_test,
+
         "feature_names": feature_names,
         "imputer": imputer,
-        "metadata": metadata,
-        "preprocess_dir": preprocess_dir,
+        "output_dir": preprocess_dir,
+        "metadata": metadata
     }
+
 
 
 # ============================================================
@@ -394,17 +475,17 @@ def preprocess_dataset(dataset_name, run_cfg, logger):
     timestamp_fmt = run_cfg["timestamp_format"]
     timestamp = datetime.now().strftime(timestamp_fmt)
 
-    outdir = os.path.join(out_root, dataset_name, model_folder, f"preprocess_{timestamp}")
-    os.makedirs(outdir, exist_ok=True)
+    output_dir = os.path.join(out_root, dataset_name, model_folder, f"preprocess_{timestamp}")
+    os.makedirs(output_dir, exist_ok=True)
 
-    logger.info(f"Saving preprocessing artifacts to: {outdir}")
+    logger.info(f"Saving preprocessing artifacts to: {output_dir}")
 
     # --------------------------------------------------------
     # Save artifacts
     # --------------------------------------------------------
-    _save_splits(train_idx, val_idx, test_idx, outdir)
-    _save_feature_names(feature_cols, outdir)
-    _save_imputer(imputer, outdir)
+    _save_splits(train_idx, val_idx, test_idx, output_dir)
+    _save_feature_names(feature_cols, output_dir)
+    _save_imputer(imputer, output_dir)
 
     # Metadata
     metadata = {
@@ -427,7 +508,7 @@ def preprocess_dataset(dataset_name, run_cfg, logger):
         },
     }
 
-    _save_preprocess_metadata(metadata, outdir)
+    _save_preprocess_metadata(metadata, output_dir)
 
     logger.info("Preprocessing complete.")
 
@@ -452,5 +533,5 @@ def preprocess_dataset(dataset_name, run_cfg, logger):
 
         "feature_names": feature_cols,
         "imputer": imputer,
-        "outdir": outdir,
+        "output_dir": output_dir,
     }
