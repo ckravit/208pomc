@@ -7,6 +7,24 @@ import time
 from datetime import datetime
 from contextlib import contextmanager
 
+def install_global_exception_hook(logger):
+    """
+    Captures all uncaught exceptions and writes them into the logfile.
+    Allows KeyboardInterrupt to behave normally.
+    """
+    def handle_exception(exc_type, exc_value, exc_traceback):
+        if issubclass(exc_type, KeyboardInterrupt):
+            # Let Ctrl+C produce normal console behavior
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+
+        logger.error(
+            "Unhandled exception occurred:",
+            exc_info=(exc_type, exc_value, exc_traceback)
+        )
+
+    sys.excepthook = handle_exception
+
 
 # ============================================================
 # Logger Initialization
@@ -72,3 +90,4 @@ def log_timing(logger, label: str):
     finally:
         elapsed = int(time.time() - start)
         logger.info(f"Finished {label} — {elapsed}s")
+

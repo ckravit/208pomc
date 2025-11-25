@@ -48,14 +48,16 @@ def _clean_sex_column(X: pl.DataFrame, logger):
         pl.col("sex")
         .cast(pl.Utf8)
         .str.to_lowercase()
-        .str.strip()
+        .str.strip_chars()
         .alias("sex")
     )
 
     # Normalize known variants
     replacements = {
         "m": "male",
+        "male": "male",
         "f": "female",
+        "female": "female",
         "unknown": "unknown",
         "": "unknown",
     }
@@ -96,7 +98,7 @@ def _encode_sex_binary(X: pl.DataFrame, majority_sex: str, logger) -> pl.DataFra
 
     X = X.with_columns(
         pl.when(pl.col("sex") == "unknown")
-        .then(majority_sex)
+        .then(pl.lit(majority_sex))
         .otherwise(pl.col("sex"))
         .alias("sex")
     )

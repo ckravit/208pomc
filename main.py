@@ -5,7 +5,7 @@ import os
 import sys
 from datetime import datetime
 
-from pipeline.logger import init_logger, log_timing
+from pipeline.logger import init_logger, log_timing, install_global_exception_hook
 
 from pipeline.loader import (
     load_yaml_config,
@@ -93,6 +93,7 @@ def main():
     # Initialize logger
     # --------------------------------------------------------
     logger = init_logger(action)
+    install_global_exception_hook(logger)
 
     with log_timing(logger, action.upper()):
         # --------------------------------------------------------
