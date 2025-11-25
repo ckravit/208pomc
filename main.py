@@ -5,6 +5,8 @@ import os
 import sys
 from datetime import datetime
 
+from pipeline.logger import init_logger, log_timing
+
 from pipeline.loader import (
     load_yaml_config,
     discover_latest_run,
@@ -88,181 +90,187 @@ def main():
     action = args.action
 
     # --------------------------------------------------------
-    # Load configs
+    # Initialize logger
     # --------------------------------------------------------
-    run_cfg = load_yaml_config("run_config.yaml")
-    model_cfg = load_yaml_config("model_config.yaml")
+    logger = init_logger(action)
 
-    # --------------------------------------------------------
-    # ACTION: PREPROCESS
-    # --------------------------------------------------------
-    if action == "preprocess":
+    with log_timing(logger, action.upper()):
+        # --------------------------------------------------------
+        # Load configs
+        # --------------------------------------------------------
+        run_cfg = load_yaml_config("run_config.yaml")
+        model_cfg = load_yaml_config("model_config.yaml")
+
+        # --------------------------------------------------------
+        # ACTION: PREPROCESS
+        # --------------------------------------------------------
+        if action == "preprocess":
+            for ds in datasets:
+                print(f"\n=== PREPROCESSING {ds.upper()} ===")
+                preprocess_dataset(ds, run_cfg, logger=logger)
+            return
+
+        # ========================================================
+        # ACTIONS THAT REQUIRE PREPROCESS
+        # ========================================================
+        # (train / evaluate / report all need preprocess)
+        preprocess_pkgs = {}
+
         for ds in datasets:
-            print(f"\n=== PREPROCESSING {ds.upper()} ===")
-            preprocess_dataset(ds, run_cfg, logger=None)
-        return
+            print(f"\n=== PREPARING {ds.upper()} ===")
 
-    # ========================================================
-    # ACTIONS THAT REQUIRE PREPROCESS
-    # ========================================================
-    # (train / evaluate / report all need preprocess)
-    preprocess_pkgs = {}
-
-    for ds in datasets:
-        print(f"\n=== PREPARING {ds.upper()} ===")
-
-        if args.preprocess_folder:
-            # User explicitly gave preprocess_<timestamp>
-            preprocess_pkgs[ds] = load_existing_preprocess(
-                ds, run_cfg, logger=None, 
-                # the user's load_existing_preprocess signature is (dataset_name, run_cfg, logger)
-                # so preprocess_folder is not accepted → manual folder override necessary
-            )
-            # override folder manually:
-            preprocess_pkgs[ds]["preprocess_dir"] = os.path.join(
-                run_cfg["paths"]["output_root"],
-                ds,
-                run_cfg["folder_naming"]["model_folder"],
-                args.preprocess_folder
-            )
-        else:
-            # autodetect latest preprocess
-            preprocess_dir = discover_latest_run(ds, run_cfg)
-            if preprocess_dir is None:
-                sys.exit(
-                    f"ERROR: No preprocess_<timestamp> folder found for dataset {ds}. "
-                    "Run --action preprocess first or specify --preprocess-folder."
+            if args.preprocess_folder:
+                # User explicitly gave preprocess_<timestamp>
+                preprocess_pkgs[ds] = load_existing_preprocess(
+                    ds, run_cfg, logger=logger, 
+                    # the user's load_existing_preprocess signature is (dataset_name, run_cfg, logger)
+                    # so preprocess_folder is not accepted → manual folder override necessary
                 )
-            # load existing preprocess
-            preprocess_pkgs[ds] = load_existing_preprocess(
-                ds, run_cfg, logger=None
-            )
-
-    # ========================================================
-    # ACTION: TRAIN
-    # ========================================================
-    if action == "train":
-        for ds in datasets:
-            print(f"\n=== TRAINING {ds.upper()} ===")
-
-            preprocess_pkg = preprocess_pkgs[ds]
-
-            train_model(
-                dataset_name=ds,
-                run_cfg=run_cfg,
-                model_cfg=model_cfg["gbc"],   # only gbc
-                preprocess_pkg=preprocess_pkg,
-                logger=None
-            )
-        return
-
-    # ========================================================
-    # ACTION: EVALUATE
-    # ========================================================
-    if action == "evaluate":
-        for ds in datasets:
-            print(f"\n=== EVALUATING {ds.upper()} ===")
-
-            # Determine run folder
-            if args.run_folder:
-                run_folder = args.run_folder
+                # override folder manually:
+                preprocess_pkgs[ds]["preprocess_dir"] = os.path.join(
+                    run_cfg["paths"]["output_root"],
+                    ds,
+                    run_cfg["folder_naming"]["model_folder"],
+                    args.preprocess_folder
+                )
             else:
-                run_folder = discover_latest_run(ds, run_cfg)
-                if run_folder is None or "preprocess_" in run_folder:
-                    sys.exit(f"No run_<timestamp> folder found for dataset {ds}. Train first.")
+                # autodetect latest preprocess
+                preprocess_dir = discover_latest_run(ds, run_cfg)
+                if preprocess_dir is None:
+                    sys.exit(
+                        f"ERROR: No preprocess_<timestamp> folder found for dataset {ds}. "
+                        "Run --action preprocess first or specify --preprocess-folder."
+                    )
+                # load existing preprocess
+                preprocess_pkgs[ds] = load_existing_preprocess(
+                    ds, run_cfg, logger=logger
+                )
 
-            # Load all artifacts inside that run folder
-            run_path = os.path.join(run_cfg["paths"]["output_root"], ds, run_folder)
-            artifacts = load_model_artifacts(run_path)
+        # ========================================================
+        # ACTION: TRAIN
+        # ========================================================
+        if action == "train":
+            for ds in datasets:
+                print(f"\n=== TRAINING {ds.upper()} ===")
 
-            # Build model_results for evaluator
-            y_test = artifacts.get("y_test")
-            pred_test = artifacts.get("preds_test")
-            sex_test = artifacts["training_results"].get("sex_test") if "training_results" in artifacts else None
+                preprocess_pkg = preprocess_pkgs[ds]
 
-            model_results = {
-                "y_test": y_test,
-                "y_pred_test": pred_test,
-                "y_pred_test_bin": (pred_test >= 0.5).astype(int),
-                "sex_test": sex_test,
-            }
+                train_model(
+                    dataset_name=ds,
+                    run_cfg=run_cfg,
+                    model_cfg=model_cfg["gbc"],   # only gbc
+                    preprocess_pkg=preprocess_pkg,
+                    logger=logger
+                )
+            return
 
-            eval_results = run_evaluation(ds, run_cfg, model_results, logger=None)
+        # ========================================================
+        # ACTION: EVALUATE
+        # ========================================================
+        if action == "evaluate":
+            for ds in datasets:
+                print(f"\n=== EVALUATING {ds.upper()} ===")
 
-            # Save eval results
-            out_dir = run_path
-            from pipeline.evaluator import save_evaluation_results
-            save_evaluation_results(eval_results, out_dir)
+                # Determine run folder
+                if args.run_folder:
+                    run_folder = args.run_folder
+                else:
+                    run_folder = discover_latest_run(ds, run_cfg)
+                    if run_folder is None or "preprocess_" in run_folder:
+                        sys.exit(f"No run_<timestamp> folder found for dataset {ds}. Train first.")
 
-            print(f"Evaluation complete for {ds}")
+                # Load all artifacts inside that run folder
+                run_path = os.path.join(run_cfg["paths"]["output_root"], ds, run_folder)
+                artifacts = load_model_artifacts(run_path)
 
-        return
+                # Build model_results for evaluator
+                y_test = artifacts.get("y_test")
+                pred_test = artifacts.get("preds_test")
+                sex_test = artifacts["training_results"].get("sex_test") if "training_results" in artifacts else None
 
-    # ========================================================
-    # ACTION: REPORT
-    # ========================================================
-    if action == "report":
-        for ds in datasets:
-            print(f"\n=== REPORT {ds.upper()} ===")
+                model_results = {
+                    "y_test": y_test,
+                    "y_pred_test": pred_test,
+                    "y_pred_test_bin": (pred_test >= 0.5).astype(int),
+                    "sex_test": sex_test,
+                }
 
-            # Determine run folder
-            if args.run_folder:
-                run_folder = args.run_folder
-            else:
-                run_folder = discover_latest_run(ds, run_cfg)
-                if run_folder is None or "preprocess_" in run_folder:
-                    sys.exit(f"No run_<timestamp> folder for dataset {ds}. Train first.")
+                eval_results = run_evaluation(ds, run_cfg, model_results, logger=logger)
 
-            run_path = os.path.join(run_cfg["paths"]["output_root"], ds, run_folder)
+                # Save eval results
+                out_dir = run_path
+                from pipeline.evaluator import save_evaluation_results
+                save_evaluation_results(eval_results, out_dir)
 
-            # Load model artifacts
-            artifacts = load_model_artifacts(run_path)
-            training_metadata = artifacts["training_results"]
+                print(f"Evaluation complete for {ds}")
 
-            # Load evaluation.json
-            eval_results = load_evaluation_results(run_path)
+            return
 
-            # Load preprocess metadata
-            preprocess_folder = training_metadata["preprocess_folder"]
-            preprocess_pkg = load_existing_preprocess(ds, run_cfg, logger=None)
-            preprocess_meta = preprocess_pkg["metadata"]
+        # ========================================================
+        # ACTION: REPORT
+        # ========================================================
+        if action == "report":
+            for ds in datasets:
+                print(f"\n=== REPORT {ds.upper()} ===")
 
-            generate_report(
-                dataset_name=ds,
+                # Determine run folder
+                if args.run_folder:
+                    run_folder = args.run_folder
+                else:
+                    run_folder = discover_latest_run(ds, run_cfg)
+                    if run_folder is None or "preprocess_" in run_folder:
+                        sys.exit(f"No run_<timestamp> folder for dataset {ds}. Train first.")
+
+                run_path = os.path.join(run_cfg["paths"]["output_root"], ds, run_folder)
+
+                # Load model artifacts
+                artifacts = load_model_artifacts(run_path)
+                training_metadata = artifacts["training_results"]
+
+                # Load evaluation.json
+                eval_results = load_evaluation_results(run_path)
+
+                # Load preprocess metadata
+                preprocess_folder = training_metadata["preprocess_folder"]
+                preprocess_pkg = load_existing_preprocess(ds, run_cfg, logger=logger)
+                preprocess_meta = preprocess_pkg["metadata"]
+
+                generate_report(
+                    dataset_name=ds,
+                    run_cfg=run_cfg,
+                    eval_results=eval_results,
+                    training_metadata=training_metadata,
+                    preprocess_meta=preprocess_meta,
+                    run_folder=run_folder,
+                    logger=logger
+                )
+
+                print(f"Report generated for {ds}")
+
+            return
+
+        # ========================================================
+        # ACTION: COMPARE
+        # ========================================================
+        if action == "compare":
+            print("\n=== COMPARISON MODE ===")
+
+            if not args.runs:
+                sys.exit("ERROR: --runs must be provided for comparison.")
+
+            run_list = [r.strip() for r in args.runs.split(",")]
+
+            # NOTE: your compare.py signature is:
+            #   run_comparison(dataset_name_arg, run_cfg, compare_targets, logger)
+            run_comparison(
+                dataset_name_arg=",".join(datasets),
                 run_cfg=run_cfg,
-                eval_results=eval_results,
-                training_metadata=training_metadata,
-                preprocess_meta=preprocess_meta,
-                run_folder=run_folder,
-                logger=None
+                compare_targets=run_list,
+                logger=logger
             )
 
-            print(f"Report generated for {ds}")
-
-        return
-
-    # ========================================================
-    # ACTION: COMPARE
-    # ========================================================
-    if action == "compare":
-        print("\n=== COMPARISON MODE ===")
-
-        if not args.runs:
-            sys.exit("ERROR: --runs must be provided for comparison.")
-
-        run_list = [r.strip() for r in args.runs.split(",")]
-
-        # NOTE: your compare.py signature is:
-        #   run_comparison(dataset_name_arg, run_cfg, compare_targets, logger)
-        run_comparison(
-            dataset_name_arg=",".join(datasets),
-            run_cfg=run_cfg,
-            compare_targets=run_list,
-            logger=None
-        )
-
-        print("Comparison complete.")
-        return
+            print("Comparison complete.")
+            return
 
 
 # ============================================================
