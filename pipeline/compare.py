@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-from evaluator import (
+from pipeline.evaluator import (
     load_evaluation_results,
     delong_test,
     mcnemar_test,
